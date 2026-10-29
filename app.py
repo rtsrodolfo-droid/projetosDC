@@ -51,6 +51,21 @@ def salvar_projeto(dados):
     conn.close()
 
 
+def atualizar_projeto(dados):
+    conn = sqlite3.connect("projetos_datacenter.db")
+    c = conn.cursor()
+    c.execute(
+        """
+        UPDATE projetos 
+        SET nome = ?, arquitetos = ?, empresa = ?, capex = ?, opex = ?, fase = ?, escopo = ?, status_texto = ?, proximos_passos = ?, pontos_atencao = ?, data_atualizacao = DATE('now')
+        WHERE id = ?
+    """,
+        dados,
+    )
+    conn.commit()
+    conn.close()
+
+
 def carregar_projetos():
     conn = sqlite3.connect("projetos_datacenter.db")
     df = pd.read_sql_query("SELECT * FROM projetos", conn)
@@ -58,26 +73,28 @@ def carregar_projetos():
     return df
 
 
-# Gerenciamento de Estado para navegação
+# Gerenciamento de Estado para navegação e modo de edição
 if "projeto_selecionado_id" not in st.session_state:
     st.session_state.projeto_selecionado_id = None
+
+if "editando_projeto" not in st.session_state:
+    st.session_state.editando_projeto = False
 
 # Interface Principal
 st.title("🏢 Gestão de Projetos - Arquitetura Datacenter")
 
 # Navegação por Abas
 aba_lista, aba_detalhes, aba_novo = st.tabs(
-    ["📋 Projetos Ativos", "🔍 Ver Detalhes", "➕ Novo / Editar Projeto"]
+    ["📋 Projetos Ativos", "🔍 Ver Detalhes", "➕ Novo Projeto"]
 )
 
 df_projetos = carregar_projetos()
 
-# ABA 1: LISTA DE PROJETOS (Mantendo o formato de tabela original + botão individual)
+# ABA 1: LISTA DE PROJETOS
 with aba_lista:
     st.subheader("Visualização e Atualização de Projetos Ativos")
 
     if not df_projetos.empty:
-        # Filtros Rápidos
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             busca = st.text_input(
@@ -89,7 +106,6 @@ with aba_lista:
                 ["Todas"] + list(df_projetos["fase"].unique()),
             )
 
-        # Aplicação dos Filtros
         df_filtrado = df_projetos.copy()
         if busca:
             df_filtrado = df_filtrado[
@@ -98,7 +114,6 @@ with aba_lista:
         if filtro_fase != "Todas":
             df_filtrado = df_filtrado[df_filtrado["fase"] == filtro_fase]
 
-        # Tabela limpa e original
         for index, row in df_filtrado.iterrows():
             cols = st.columns([2, 2, 2, 1.5, 1.5, 1.5, 1])
             with cols[0]:
@@ -116,12 +131,15 @@ with aba_lista:
             with cols[6]:
                 if st.button("Detalhes", key=f"tbl_btn_{row['id']}"):
                     st.session_state.projeto_selecionado_id = row["id"]
+                    st.session_state.editando_projeto = (
+                        False  # Reseta o modo de edição ao trocar de projeto
+                    )
                     st.rerun()
             st.divider()
     else:
         st.info("Nenhum projeto cadastrado ainda.")
 
-# ABA 2: DETALHES DO PROJETO
+# ABA 2: DETALHES E EDIÇÃO DO PROJETO
 with aba_detalhes:
     if not df_projetos.empty:
         ids_disponiveis = df_projetos["id"].tolist()
@@ -142,116 +160,121 @@ with aba_detalhes:
         st.session_state.projeto_selecionado_id = projeto_sel_id
         p = df_projetos[df_projetos["id"] == projeto_sel_id].iloc[0]
 
-        st.markdown(
-            f"## {p['nome']} <span style='color:green;'>● {p['fase']}</span>",
-            unsafe_allow_html=True,
-        )
-        st.caption(
-            f"**Empresa:** {p['empresa']} | **Arquitetos:** {p['arquitetos']} | **Última Atualização:** {p['data_atualizacao']}"
-        )
-
-        col_m1, col_m2, col_m3 = st.columns(3)
-        col_m1.metric("CAPEX Previsto", f"R$ {p['capex']:,.2f}")
-        col_m2.metric("OPEX Estimado", f"R$ {p['opex']:,.2f}")
-        col_m3.metric("Fase do Projeto", p["fase"])
+        # Botão para alternar o modo de edição
+        col_tit, col_btn_edit = st.columns([4, 1])
+        with col_tit:
+            st.markdown(
+                f"## {p['nome']} <span style='color:green;'>● {p['fase']}</span>",
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                f"**Empresa:** {p['empresa']} | **Arquitetos:** {p['arquitetos']} | **Última Atualização:** {p['data_atualizacao']}"
+            )
+        with col_btn_edit:
+            st.write("")
+            if st.button(
+                "✏️ Editar Projeto"
+                if not st.session_state.editando_projeto
+                else "❌ Cancelar Edição"
+            ):
+                st.session_state.editando_projeto = not st.session_state.editando_projeto
+                st.rerun()
 
         st.divider()
 
-        col_left, col_right = st.columns([1, 1])
-        with col_left:
-            st.subheader("📝 Escopo")
-            st.info(p["escopo"] if p["escopo"] else "Não informado.")
-            st.subheader("📊 Status Atual")
-            st.write(
-                p["status_texto"] if p["status_texto"] else "Sem atualizações."
-            )
-            st.subheader("🚀 Próximos Passos")
-            st.write(
-                p["proximos_passos"]
-                if p["proximos_passos"]
-                else "Nenhum próximo passo mapeado."
-            )
-            st.subheader("⚠️ Pontos de Atenção / Riscos")
-            st.warning(
-                p["pontos_atencao"]
-                if p["pontos_atencao"]
-                else "Nenhum risco informado."
+        # SE ESTIVER NO MODO DE EDIÇÃO
+        if st.session_state.editando_projeto:
+            st.info(
+                "Modo de Edição Ativo. Altere os campos abaixo e clique em 'Salvar Alterações'."
             )
 
-        with col_right:
-            st.subheader("💰 Resumo Financeiro")
-            df_orcam = pd.DataFrame(
-                {
-                    "Tipo": ["CAPEX", "OPEX"],
-                    "Valor": [p["capex"], p["opex"]],
-                }
-            )
-            fig_bar = px.bar(
-                df_orcam,
-                x="Tipo",
-                y="Valor",
-                color="Tipo",
-                text_auto=".2s",
-                title="Distribuição do Orçamento",
-            )
-            st.plotly_chart(fig_bar, use_container_width=True)
+            with st.form("form_edicao_projeto"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    novo_nome = st.text_input("Nome do Projeto *", value=p["nome"])
+                with col2:
+                    novos_arq = st.text_input(
+                        "Arquitetos Responsáveis *", value=p["arquitetos"]
+                    )
+                with col3:
+                    nova_empresa = st.text_input(
+                        "Empresa / Unidade *", value=p["empresa"]
+                    )
 
-# ABA 3: FORMULÁRIO DE CADASTRO
-with aba_novo:
-    st.subheader("Registrar Novo Projeto")
+                col_cap, col_op, col_fase = st.columns(3)
+                with col_cap:
+                    novo_capex = st.number_input(
+                        "CAPEX (R$)", min_value=0.0, step=1000.0, value=float(p["capex"])
+                    )
+                with col_op:
+                    novo_opex = st.number_input(
+                        "OPEX (R$)", min_value=0.0, step=1000.0, value=float(p["opex"])
+                    )
+                with col_fase:
+                    fases_disponiveis = [
+                        "Concepção",
+                        "Design Detalhado",
+                        "Em Andamento (GMUD Aberta)",
+                        "Homologação",
+                        "Concluído",
+                        "Suspenso",
+                    ]
+                    idx_fase = (
+                        fases_disponiveis.index(p["fase"])
+                        if p["fase"] in fases_disponiveis
+                        else 0
+                    )
+                    nova_fase = st.selectbox(
+                        "Fase Atual", fases_disponiveis, index=idx_fase
+                    )
 
-    with st.form("form_cadastro_projeto", clear_on_submit=True):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            nome = st.text_input("Nome do Projeto *", placeholder="Ex: OTRS - DR")
-        with col2:
-            arquitetos = st.text_input(
-                "Arquitetos Responsáveis *", placeholder="Ex: Antonacci / Zanini"
-            )
-        with col3:
-            empresa = st.text_input(
-                "Empresa / Unidade *", placeholder="Ex: Claro empresas"
-            )
+                novo_escopo = st.text_area(
+                    "Escopo do Projeto",
+                    value=p["escopo"] if pd.notna(p["escopo"]) else "",
+                )
+                novo_status = st.text_area(
+                    "Status Atual (com datas e marcos)",
+                    value=p["status_texto"] if pd.notna(p["status_texto"]) else "",
+                )
+                novos_passos = st.text_area(
+                    "Próximos Passos",
+                    value=p["proximos_passos"]
+                    if pd.notna(p["proximos_passos"])
+                    else "",
+                )
+                novos_atencao = st.text_area(
+                    "Pontos de Atenção / Riscos",
+                    value=p["pontos_atencao"]
+                    if pd.notna(p["pontos_atencao"])
+                    else "",
+                )
 
-        col_cap, col_op, col_fase = st.columns(3)
-        with col_cap:
-            capex = st.number_input("CAPEX (R$)", min_value=0.0, step=1000.0)
-        with col_op:
-            opex = st.number_input("OPEX (R$)", min_value=0.0, step=1000.0)
-        with col_fase:
-            fase = st.selectbox(
-                "Fase Atual",
-                [
-                    "Concepção",
-                    "Design Detalhado",
-                    "Em Andamento (GMUD Aberta)",
-                    "Homologação",
-                    "Concluído",
-                    "Suspenso",
-                ],
-            )
+                btn_salvar_edicao = st.form_submit_button("💾 Salvar Alterações")
 
-        escopo = st.text_area("Escopo do Projeto")
-        status_texto = st.text_area("Status Atual (com datas e marcos)")
-        proximos_passos = st.text_area("Próximos Passos")
-        pontos_atencao = st.text_area("Pontos de Atenção / Riscos")
+                if btn_salvar_edicao:
+                    if novo_nome and novos_arq and nova_empresa:
+                        atualizar_projeto((
+                            novo_nome,
+                            novos_arq,
+                            nova_empresa,
+                            novo_capex,
+                            novo_opex,
+                            nova_fase,
+                            novo_escopo,
+                            novo_status,
+                            novos_passos,
+novos_atencao,
+                            projeto_sel_id,
+                        ))
+                        st.session_state.editando_projeto = False
+                        st.success("Projeto atualizado com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error("Preencha os campos obrigatórios marcados com *.")
 
-        btn_salvar = st.form_submit_button("💾 Salvar Projeto")
-
-        if btn_salvar:
-            if nome and arquitetos and empresa:
-                salvar_projeto((
-                    nome,
-                    arquitetos,
-                    empresa,
-                    capex,
-                    opex,
-                    fase,
-                    escopo,
-                    status_texto,
-                    proximos_passos,
-                    pontos_atencao,
-                ))
-                st.success("Projeto registado com sucesso!")
-            else:
-                st.error("Preencha os campos obrigatórios marcados com *.")
+        # SE NÃO ESTIVER NO MODO DE EDIÇÃO (EXIBIÇÃO NORMAL)
+        else:
+            col_m1, col_m2, col_m3 = st.columns(3)
+            col_m1.metric("CAPEX Previsto", f"R$ {p['capex']:,.2f}")
+            col_m2.metric("OPEX Estimado", f"R$ {p['opex']:,.2f}")
+            col_m3.metric("Fase do Projeto", p
