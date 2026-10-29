@@ -58,7 +58,7 @@ def carregar_projetos():
     return df
 
 
-# Gerenciamento de Estado para navegação por botões das linhas
+# Gerenciamento de Estado para navegação
 if "projeto_selecionado_id" not in st.session_state:
     st.session_state.projeto_selecionado_id = None
 
@@ -72,7 +72,7 @@ aba_lista, aba_detalhes, aba_novo = st.tabs(
 
 df_projetos = carregar_projetos()
 
-# ABA 1: LISTA DE PROJETOS
+# ABA 1: LISTA DE PROJETOS (Mantendo o formato de tabela original + botão individual)
 with aba_lista:
     st.subheader("Visualização e Atualização de Projetos Ativos")
 
@@ -98,46 +98,32 @@ with aba_lista:
         if filtro_fase != "Todas":
             df_filtrado = df_filtrado[df_filtrado["fase"] == filtro_fase]
 
-        # Exibição iterativa por linhas com botões diretos
+        # Tabela limpa e original
         for index, row in df_filtrado.iterrows():
-            with st.container(border=True):
-                col_info1, col_info2, col_info3, col_btn = st.columns(
-                    [3, 2, 2, 1]
-                )
-
-                with col_info1:
-                    st.markdown(f"**{row['nome']}**")
-                    st.caption(
-                        f"Empresa: {row['empresa']} | Arquiteto(s): {row['arquitetos']}"
-                    )
-
-                with col_info2:
-                    st.text(f"Fase: {row['fase']}")
-                    st.caption(f"Atualizado em: {row['data_atualizacao']}")
-
-                with col_info3:
-                    st.text(
-                        f"CAPEX: R$ {row['capex']:,.2f}\nOPEX: R$ {row['opex']:,.2f}"
-                    )
-
-                with col_btn:
-                    st.write("")  # Ajuste fino de espaçamento vertical
-                    if st.button("Ver Detalhes", key=f"btn_detalhe_{row['id']}"):
-                        st.session_state.projeto_selecionado_id = row["id"]
-                        # Como o Streamlit recarrega, mudamos o foco para a aba de detalhes
-                        st.info(
-                            f"Redirecionando para o projeto: {row['nome']}..."
-                        )
-                        st.rerun()
+            cols = st.columns([2, 2, 2, 1.5, 1.5, 1.5, 1])
+            with cols[0]:
+                st.text(row["nome"])
+            with cols[1]:
+                st.text(row["arquitetos"])
+            with cols[2]:
+                st.text(row["empresa"])
+            with cols[3]:
+                st.text(f"R$ {row['capex']:,.2f}")
+            with cols[4]:
+                st.text(row["fase"])
+            with cols[5]:
+                st.text(str(row["data_atualizacao"]))
+            with cols[6]:
+                if st.button("Detalhes", key=f"tbl_btn_{row['id']}"):
+                    st.session_state.projeto_selecionado_id = row["id"]
+                    st.rerun()
+            st.divider()
     else:
-        st.info(
-            "Nenhum projeto cadastrado ainda. Utilize a aba **'➕ Novo / Editar Projeto'** para começar."
-        )
+        st.info("Nenhum projeto cadastrado ainda.")
 
-# ABA 2: DETALHES DO PROJETO (VISUAL DASHBOARD)
+# ABA 2: DETALHES DO PROJETO
 with aba_detalhes:
     if not df_projetos.empty:
-        # Se veio um ID pelo botão da linha, usa ele como padrão; senão, pega o primeiro da lista
         ids_disponiveis = df_projetos["id"].tolist()
         indice_padrao = 0
 
@@ -153,9 +139,7 @@ with aba_detalhes:
             format_func=lambda x: f"{x} - {df_projetos[df_projetos['id'] == x]['nome'].values[0]}",
         )
 
-        # Atualiza a session state caso altere pelo selectbox manual
         st.session_state.projeto_selecionado_id = projeto_sel_id
-
         p = df_projetos[df_projetos["id"] == projeto_sel_id].iloc[0]
 
         st.markdown(
@@ -174,23 +158,19 @@ with aba_detalhes:
         st.divider()
 
         col_left, col_right = st.columns([1, 1])
-
         with col_left:
             st.subheader("📝 Escopo")
             st.info(p["escopo"] if p["escopo"] else "Não informado.")
-
             st.subheader("📊 Status Atual")
             st.write(
                 p["status_texto"] if p["status_texto"] else "Sem atualizações."
             )
-
             st.subheader("🚀 Próximos Passos")
             st.write(
                 p["proximos_passos"]
                 if p["proximos_passos"]
                 else "Nenhum próximo passo mapeado."
             )
-
             st.subheader("⚠️ Pontos de Atenção / Riscos")
             st.warning(
                 p["pontos_atencao"]
@@ -245,7 +225,7 @@ with aba_novo:
                     "Concepção",
                     "Design Detalhado",
                     "Em Andamento (GMUD Aberta)",
-                    * "Homologação",
+                    "Homologação",
                     "Concluído",
                     "Suspenso",
                 ],
@@ -272,10 +252,6 @@ with aba_novo:
                     proximos_passos,
                     pontos_atencao,
                 ))
-                st.success(
-                    "Projeto registado com sucesso! Volte à aba 'Projetos Ativos' para visualizar."
-                )
+                st.success("Projeto registado com sucesso!")
             else:
-                st.error(
-                    "Por favor, preencha os campos obrigatórios marcados com *."
-                )
+                st.error("Preencha os campos obrigatórios marcados com *.")
