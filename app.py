@@ -58,6 +58,10 @@ def carregar_projetos():
     return df
 
 
+# Gerenciamento de Estado para navegação por botões das linhas
+if "projeto_selecionado_id" not in st.session_state:
+    st.session_state.projeto_selecionado_id = None
+
 # Interface Principal
 st.title("🏢 Gestão de Projetos - Arquitetura Datacenter")
 
@@ -94,37 +98,37 @@ with aba_lista:
         if filtro_fase != "Todas":
             df_filtrado = df_filtrado[df_filtrado["fase"] == filtro_fase]
 
-        # Tabela Formatada
-        st.dataframe(
-            df_filtrado[
-                [
-                    "id",
-                    "nome",
-                    "arquitetos",
-                    "empresa",
-                    "capex",
-                    "opex",
-                    "fase",
-                    "data_atualizacao",
-                ]
-            ],
-            column_config={
-                "id": "ID",
-                "nome": "Nome do Projeto",
-                "arquitetos": "Arquiteto(s)",
-                "empresa": "Empresa",
-                "capex": st.column_config.NumberColumn(
-                    "CAPEX (R$)", format="R$ %.2f"
-                ),
-                "opex": st.column_config.NumberColumn(
-                    "OPEX (R$)", format="R$ %.2f"
-                ),
-                "fase": "Fase Atual",
-                "data_atualizacao": "Última Atualização",
-            },
-            use_container_width=True,
-            hide_index=True,
-        )
+        # Exibição iterativa por linhas com botões diretos
+        for index, row in df_filtrado.iterrows():
+            with st.container(border=True):
+                col_info1, col_info2, col_info3, col_btn = st.columns(
+                    [3, 2, 2, 1]
+                )
+
+                with col_info1:
+                    st.markdown(f"**{row['nome']}**")
+                    st.caption(
+                        f"Empresa: {row['empresa']} | Arquiteto(s): {row['arquitetos']}"
+                    )
+
+                with col_info2:
+                    st.text(f"Fase: {row['fase']}")
+                    st.caption(f"Atualizado em: {row['data_atualizacao']}")
+
+                with col_info3:
+                    st.text(
+                        f"CAPEX: R$ {row['capex']:,.2f}\nOPEX: R$ {row['opex']:,.2f}"
+                    )
+
+                with col_btn:
+                    st.write("")  # Ajuste fino de espaçamento vertical
+                    if st.button("Ver Detalhes", key=f"btn_detalhe_{row['id']}"):
+                        st.session_state.projeto_selecionado_id = row["id"]
+                        # Como o Streamlit recarrega, mudamos o foco para a aba de detalhes
+                        st.info(
+                            f"Redirecionando para o projeto: {row['nome']}..."
+                        )
+                        st.rerun()
     else:
         st.info(
             "Nenhum projeto cadastrado ainda. Utilize a aba **'➕ Novo / Editar Projeto'** para começar."
@@ -133,15 +137,31 @@ with aba_lista:
 # ABA 2: DETALHES DO PROJETO (VISUAL DASHBOARD)
 with aba_detalhes:
     if not df_projetos.empty:
+        # Se veio um ID pelo botão da linha, usa ele como padrão; senão, pega o primeiro da lista
+        ids_disponiveis = df_projetos["id"].tolist()
+        indice_padrao = 0
+
+        if st.session_state.projeto_selecionado_id in ids_disponiveis:
+            indice_padrao = ids_disponiveis.index(
+                st.session_state.projeto_selecionado_id
+            )
+
         projeto_sel_id = st.selectbox(
             "Selecione o Projeto para visualizar:",
-            df_projetos["id"].tolist(),
+            ids_disponiveis,
+            index=indice_padrao,
             format_func=lambda x: f"{x} - {df_projetos[df_projetos['id'] == x]['nome'].values[0]}",
         )
 
+        # Atualiza a session state caso altere pelo selectbox manual
+        st.session_state.projeto_selecionado_id = projeto_sel_id
+
         p = df_projetos[df_projetos["id"] == projeto_sel_id].iloc[0]
 
-        st.markdown(f"## {p['nome']} <span style='color:green;'>● {p['fase']}</span>", unsafe_allow_html=True)
+        st.markdown(
+            f"## {p['nome']} <span style='color:green;'>● {p['fase']}</span>",
+            unsafe_allow_html=True,
+        )
         st.caption(
             f"**Empresa:** {p['empresa']} | **Arquitetos:** {p['arquitetos']} | **Última Atualização:** {p['data_atualizacao']}"
         )
@@ -225,7 +245,7 @@ with aba_novo:
                     "Concepção",
                     "Design Detalhado",
                     "Em Andamento (GMUD Aberta)",
-                    "Homologação",
+                    * "Homologação",
                     "Concluído",
                     "Suspenso",
                 ],
